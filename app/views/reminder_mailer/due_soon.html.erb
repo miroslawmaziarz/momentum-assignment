@@ -1,0 +1,8 @@
+<p>Hi <%= @borrowing.reader.full_name %>,</p>
+
+<p>
+  <strong><%= @borrowing.book.title %></strong> is due back in <%= ReturnReminderJob::DUE_SOON_DAYS %> days,
+  on <%= @borrowing.formatted_due_date %>.
+</p>
+
+<p>No action is needed if you have already returned it.</p>

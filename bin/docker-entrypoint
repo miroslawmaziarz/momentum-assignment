@@ -1,0 +1,43 @@
+#!/bin/bash -e
+
+# Wait for PostgreSQL to accept connections before doing anything that talks to it.
+# Compose's `depends_on: condition: service_healthy` already gates startup, but this makes
+# a bare `docker run` correct too, and covers the gap between "container healthy" and
+# "server accepting connections" after a restart.
+wait_for_database() {
+  # `db` rather than database.yml's `localhost` default: this script only ever runs inside
+  # a container, where the database is a sibling service, never a process on the same host.
+  # docker-compose.yml sets DATABASE_HOST explicitly regardless.
+  local host="${DATABASE_HOST:-db}"
+  local port="${DATABASE_PORT:-5432}"
+  local attempts=60
+
+  until pg_isready --host="${host}" --port="${port}" --quiet; do
+    attempts=$((attempts - 1))
+    if [ "${attempts}" -le 0 ]; then
+      echo "Database at ${host}:${port} never became ready; giving up." >&2
+      exit 1
+    fi
+    echo "Waiting for database at ${host}:${port}..."
+    sleep 1
+  done
+}
+
+# In development the gems live in a named volume that outlives image rebuilds, so it can
+# fall behind the Gemfile. Reconcile it rather than failing with a cryptic bundler error.
+if [ "${RAILS_ENV}" = "development" ] && ! bundle check >/dev/null 2>&1; then
+  echo "Gems out of date; installing..."
+  bundle install
+fi
+
+# Only the web process prepares the database; other commands (rspec, console, a worker)
+# must not race it or mutate the schema out from under it.
+if [[ "$*" == *"rails server"* || "$*" == *"rails s"* ]]; then
+  wait_for_database
+
+  # db:prepare is the idempotent one: it creates and seeds the database if it is absent,
+  # and otherwise only runs pending migrations. Existing data survives a restart.
+  ./bin/rails db:prepare
+fi
+
+exec "${@}"

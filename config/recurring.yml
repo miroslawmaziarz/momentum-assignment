@@ -1,0 +1,9 @@
+development:
+  return_reminder_scan:
+    class: ReturnReminderJob
+    schedule: every day at 6am
+
+production:
+  return_reminder_scan:
+    class: ReturnReminderJob
+    schedule: every day at 6am
